@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/swaggo/http-swagger"
 	"go.uber.org/zap"
 	"net/http"
 	"subservice/internal/api/handler"
@@ -26,7 +27,7 @@ func SetupRouter(s *service.SubscriptionService, l *zap.Logger) *Router {
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 	})
-
+	r.Get("/swagger/*", httpSwagger.WrapHandler)
 	h := handler.NewHandler(s)
 
 	r.Route("/api/v1", func(r chi.Router) {
