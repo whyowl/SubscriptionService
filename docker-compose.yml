@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: project-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: projectdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: postgres:16
+    container_name: project-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint: [ "/bin/bash", "-lc" ]
+    command: >
+      "PGPASSWORD=password psql
+      -h db -U user -d projectdb
+      -f /migrations/init.sql"
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: project-app
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_URL: postgres://user:password@db:5432/projectdb?sslmode=disable
+      API_ADDRESS: ":8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.env:/app/config.env:ro
+    restart: unless-stopped
+
+volumes:
+  pgdata:
