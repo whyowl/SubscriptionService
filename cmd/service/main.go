@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"os/signal"
+	_ "subservice/docs"
 	"subservice/internal/api"
 	"subservice/internal/config"
 	"subservice/internal/logger"

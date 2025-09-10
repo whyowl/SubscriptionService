@@ -14,11 +14,11 @@ import (
 )
 
 type SubscriptionRequest struct {
-	ServiceName string `json:"service_name"`
-	Price       int64  `json:"price"`
-	UserId      string `json:"user_id"`
-	StartDate   string `json:"start_date"`
-	EndDate     string `json:"end_date,omitempty"`
+	ServiceName string `json:"service_name" example:"Yandex Plus"`
+	Price       int64  `json:"price" example:"499"`
+	UserId      string `json:"user_id" example:"60601fee-2bf1-4721-ae6f-7636e79a0cba"`
+	StartDate   string `json:"start_date" example:"2023-10-01T00:00:00Z"`
+	EndDate     string `json:"end_date,omitempty" example:"2025-10-01T00:00:00Z"`
 }
 
 type RequestError struct {
@@ -26,6 +26,30 @@ type RequestError struct {
 	StatusCode int
 }
 
+type ErrorResponse struct {
+	Error string `json:"error" example:"error message"`
+}
+
+type SuccessResponse struct {
+	Status string `json:"status" example:"success"`
+}
+
+type SummeryResponse struct {
+	TotalPrice int `json:"total_price" example:"1497"`
+}
+
+// Subscribe godoc
+// @Summary      Создать подписку
+// @Description  Создает запись о подписке пользователя
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        body  body      SubscriptionRequest  true  "Данные подписки"
+// @Success      201   {object}  SuccessResponse   "status: success"
+// @Failure      400   {object}  ErrorResponse   "invalid json / validation error"
+// @Failure      409   {object}  ErrorResponse   "subscription already exists"
+// @Failure      500   {object}  ErrorResponse   "internal server error"
+// @Router       /subscriptions [post]
 func (h *RestHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
@@ -61,6 +85,16 @@ func (h *RestHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, map[string]string{"status": "success"})
 }
 
+// GetSubscriptions godoc
+// @Summary      Список подписок пользователя
+// @Description  Возвращает все подписки для пользователя
+// @Tags         subscriptions
+// @Produce      json
+// @Param        userId  path      string  true  "User ID (UUID)"
+// @Success      200     {array}   model.Subscription
+// @Failure      400     {object}  ErrorResponse "invalid userId parameter"
+// @Failure      500     {object}  ErrorResponse "internal server error"
+// @Router       /subscriptions/{userId} [get]
 func (h *RestHandler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
@@ -83,6 +117,36 @@ func (h *RestHandler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, subs)
 }
 
+// UpdateSubscription godoc
+// @Summary      Обновить подписку
+// @Description  Обновляет запись подписки (по user_id + service_name)
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        body  body      SubscriptionRequest  true  "Данные подписки"
+// @Success      200   {object}  SuccessResponse "status: success"
+// @Failure 400 {object} ErrorResponse "validation error"
+// @Example {json} Ошибка валидации:
+//
+//	{
+//	  "error": "invalid user_id format"
+//	}
+//
+// @Failure      404   {object}  ErrorResponse   "subscription not found"
+// @Example {json} Ошибка запроса:
+//
+//	{
+//	  "error": "subscription not found"
+//	}
+//
+// @Failure      500   {object}  ErrorResponse	 "internal server error"
+// @Example {json} Ошибка сервера:
+//
+//	{
+//	  "error": "internal server error"
+//	}
+//
+// @Router       /subscriptions [put]
 func (h *RestHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
@@ -118,6 +182,18 @@ func (h *RestHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
+// Unsubscribe godoc
+// @Summary      Удалить подписку
+// @Description  Удаляет запись о подписке по user_id и service_name
+// @Tags         subscriptions
+// @Produce      json
+// @Param        user_id       query     string  true  "User ID (UUID)"
+// @Param        service_name  query     string  true  "Название сервиса"
+// @Success      200           {object}  SuccessResponse "status: success"
+// @Failure      400           {object}  ErrorResponse "invalid user_id parameter / service_name is required"
+// @Failure      404           {object}  ErrorResponse   "subscription not found"
+// @Failure      500           {object}  ErrorResponse "internal server error"
+// @Router       /subscriptions [delete]
 func (h *RestHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
@@ -151,6 +227,18 @@ func (h *RestHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
+// GetSubscription godoc
+// @Summary      Получить подписку
+// @Description  Возвращает одну подписку по user_id и service_name
+// @Tags         subscriptions
+// @Produce      json
+// @Param        user_id       query     string  true  "User ID (UUID)"
+// @Param        service_name  query     string  true  "Название сервиса"
+// @Success      200           {object}  model.Subscription
+// @Failure      400           {object}  ErrorResponse
+// @Failure      404           {object}  ErrorResponse   "subscription not found"
+// @Failure      500           {object}  ErrorResponse
+// @Router       /subscriptions [get]
 func (h *RestHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
@@ -185,6 +273,19 @@ func (h *RestHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, sub)
 }
 
+// GetSubscriptionSummary godoc
+// @Summary      Сумма подписок за период
+// @Description  Считает суммарную стоимость активных подписок по месяцам за период, с фильтрами
+// @Tags         subscriptions
+// @Produce      json
+// @Param        from          query     string  true  "Начало периода (RFC3339)"
+// @Param        to            query     string  true  "Конец периода (RFC3339)"
+// @Param        user_id       query     string  false "User ID (UUID)"
+// @Param        service_name  query     string  false "Название сервиса"
+// @Success      200           {object}  SummeryResponse
+// @Failure      400           {object}  ErrorResponse
+// @Failure      500           {object}  ErrorResponse
+// @Router       /subscriptions/summary [get]
 func (h *RestHandler) GetSubscriptionSummary(w http.ResponseWriter, r *http.Request) {
 	l := apimw.FromContext(r.Context())
 
