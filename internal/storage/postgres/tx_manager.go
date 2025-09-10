@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
 	"math/rand"
+	apimw "subservice/internal/api/middleware"
 	"time"
 
 	"github.com/jackc/pgconn"
@@ -54,6 +56,7 @@ func (tm *TxManager) beginFunc(ctx context.Context, txOptions pgx.TxOptions, fn 
 }
 
 func (tm *TxManager) beginWithRetry(ctx context.Context, txOptions pgx.TxOptions, fn func(ctxTx context.Context) error) error {
+	l := apimw.FromContext(ctx)
 	const maxRetries = 5
 	baseDelay := 10 * time.Millisecond
 
@@ -65,6 +68,7 @@ func (tm *TxManager) beginWithRetry(ctx context.Context, txOptions pgx.TxOptions
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			if pgErr.Code == "40001" || pgErr.Code == "40P01" {
+				l.Warn("Transaction serialization failure, retrying...", zap.Int("attempt", attempt+1), zap.Error(err))
 				jitter := time.Duration(rand.Intn(10)) * time.Millisecond
 				time.Sleep(time.Duration(1<<attempt)*baseDelay + jitter)
 				continue

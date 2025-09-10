@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 	"net/http"
+	apimw "subservice/internal/api/middleware"
 	"subservice/internal/model"
 	"time"
 
@@ -25,6 +27,7 @@ type RequestError struct {
 }
 
 func (h *RestHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
 
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -34,11 +37,13 @@ func (h *RestHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 	var req SubscriptionRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
+		l.Warn("Handler Subscribe: invalid json")
 		respondError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
 	if reqErr, sub := ValidateSubscriptionRequest(&req); reqErr != nil {
+		l.Warn("Handler Subscribe: validation error", zap.String("error", reqErr.Message))
 		respondError(w, reqErr.StatusCode, reqErr.Message)
 		return
 	} else {
@@ -53,17 +58,19 @@ func (h *RestHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondJSON(w, http.StatusCreated, map[string]string{"status": "success"})
 }
 
 func (h *RestHandler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
 	userIdStr := chi.URLParam(r, "userId")
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil || userId == uuid.Nil {
+		l.Warn("Handler GetSubscriptions: invalid userId parameter")
 		respondError(w, http.StatusBadRequest, "invalid userId parameter")
 		return
 	}
@@ -73,11 +80,12 @@ func (h *RestHandler) GetSubscriptions(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondJSON(w, http.StatusOK, subs)
 }
 
 func (h *RestHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
@@ -86,11 +94,13 @@ func (h *RestHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request)
 	var req SubscriptionRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
+		l.Warn("Handler UpdateSubscription: invalid json")
 		respondError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
 	if reqErr, sub := ValidateSubscriptionRequest(&req); reqErr != nil {
+		l.Warn("Handler UpdateSubscription: validation error", zap.String("error", reqErr.Message))
 		respondError(w, reqErr.StatusCode, reqErr.Message)
 		return
 	} else {
@@ -105,11 +115,12 @@ func (h *RestHandler) UpdateSubscription(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func (h *RestHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
@@ -118,11 +129,13 @@ func (h *RestHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil || userId == uuid.Nil {
+		l.Warn("Handler Unsubscribe: invalid user_id parameter", zap.String("user_id", userIdStr))
 		respondError(w, http.StatusBadRequest, "invalid user_id parameter")
 		return
 	}
 
 	if serviceName == "" {
+		l.Warn("Handler Unsubscribe: service_name is empty")
 		respondError(w, http.StatusBadRequest, "service_name is required")
 		return
 	}
@@ -135,11 +148,12 @@ func (h *RestHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }
 
 func (h *RestHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
@@ -148,11 +162,13 @@ func (h *RestHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 
 	userId, err := uuid.Parse(userIdStr)
 	if err != nil || userId == uuid.Nil {
+		l.Warn("Handler GetSubscription: invalid user_id parameter", zap.String("user_id", userIdStr))
 		respondError(w, http.StatusBadRequest, "invalid user_id parameter")
 		return
 	}
 
 	if serviceName == "" {
+		l.Warn("Handler GetSubscription: service_name is empty")
 		respondError(w, http.StatusBadRequest, "service_name is required")
 		return
 	}
@@ -166,11 +182,12 @@ func (h *RestHandler) GetSubscription(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	respondJSON(w, http.StatusOK, sub)
 }
 
 func (h *RestHandler) GetSubscriptionSummary(w http.ResponseWriter, r *http.Request) {
+	l := apimw.FromContext(r.Context())
+
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
@@ -180,18 +197,21 @@ func (h *RestHandler) GetSubscriptionSummary(w http.ResponseWriter, r *http.Requ
 	serviceName := r.URL.Query().Get("service_name")
 
 	if fromStr == "" || toStr == "" {
+		l.Warn("Handler GetSubscriptionSummary: missing from or to parameters")
 		respondError(w, http.StatusBadRequest, "from and to parameters are required")
 		return
 	}
 
 	from, err := time.Parse(time.RFC3339, fromStr)
 	if err != nil {
+		l.Warn("Handler GetSubscriptionSummary: invalid from date format")
 		respondError(w, http.StatusBadRequest, "invalid from date format")
 		return
 	}
 
 	to, err := time.Parse(time.RFC3339, toStr)
 	if err != nil {
+		l.Warn("Handler GetSubscriptionSummary: invalid to date format")
 		respondError(w, http.StatusBadRequest, "invalid to date format")
 		return
 	}
@@ -200,6 +220,7 @@ func (h *RestHandler) GetSubscriptionSummary(w http.ResponseWriter, r *http.Requ
 	if userIdStr != "" {
 		uid, err := uuid.Parse(userIdStr)
 		if err != nil || uid == uuid.Nil {
+			l.Warn("Handler GetSubscriptionSummary: invalid user_id parameter")
 			respondError(w, http.StatusBadRequest, "invalid user_id parameter")
 			return
 		}
@@ -213,11 +234,12 @@ func (h *RestHandler) GetSubscriptionSummary(w http.ResponseWriter, r *http.Requ
 
 	summary, err := h.s.GetSubscriptionSummary(ctx, from, to, userId, svcName)
 	if err != nil {
+		l.Error("Handler GetSubscriptionSummary: internal error", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]int{"total_subscriptions": summary})
+	respondJSON(w, http.StatusOK, map[string]int{"total_price": summary})
 }
 
 func ValidateSubscriptionRequest(req *SubscriptionRequest) (*RequestError, *model.Subscription) {
@@ -244,9 +266,11 @@ func ValidateSubscriptionRequest(req *SubscriptionRequest) (*RequestError, *mode
 	}
 
 	if req.EndDate != "" {
-		if *parsedReq.EndDate, err = time.Parse(time.RFC3339, req.EndDate); err != nil {
+		end, err := time.Parse(time.RFC3339, req.EndDate)
+		if err != nil {
 			return &RequestError{Message: "invalid end_date format", StatusCode: http.StatusBadRequest}, nil
 		}
+		parsedReq.EndDate = &end
 	}
 	return nil, &parsedReq
 }

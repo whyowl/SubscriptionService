@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"github.com/jackc/pgx/v4/pgxpool"
-	"log"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
 	"subservice/internal/api"
 	"subservice/internal/config"
+	"subservice/internal/logger"
 	"subservice/internal/service"
 	"subservice/internal/storage"
 	"subservice/internal/storage/postgres"
@@ -16,6 +17,12 @@ import (
 )
 
 func main() {
+	cfg := config.Load()
+
+	l, cleanup := logger.New(cfg)
+	defer cleanup()
+	zap.ReplaceGlobals(l)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -24,34 +31,33 @@ func main() {
 
 	go func() {
 		<-sig
+		l.Info("signal received, shutting down...")
 		cancel()
 	}()
 
-	cfg := config.Load()
-
 	pool, err := pgxpool.Connect(ctx, cfg.PostgresURL)
 	if err != nil {
-		log.Fatal(err)
+		l.Fatal("failed to connect to database:", zap.Error(err))
 	}
 	defer pool.Close()
 
-	SubscriptionService := service.NewSubscriptionService(InitStorage(pool))
+	SubscriptionService := service.NewSubscriptionService(InitStorage(pool), l)
 
-	router := api.SetupRouter(SubscriptionService)
+	router := api.SetupRouter(SubscriptionService, l)
 
 	go func() {
 		err := router.Run(cfg.ApiAddress)
 		if err != nil {
-			log.Fatal("Failed to start server:", err)
+			l.Fatal("failed to start server:", zap.Error(err))
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("Shutting down server...")
+	l.Info("shutting down server...")
 	ctxSvr, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := router.Stop(ctxSvr); err != nil {
-		log.Printf("Failed to stop server:", err) //todo log
+		l.Error("failed to gracefully shutdown server:", zap.Error(err))
 	}
 	time.Sleep(7 * time.Second)
 }

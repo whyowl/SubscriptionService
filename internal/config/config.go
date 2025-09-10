@@ -10,17 +10,20 @@ import (
 type Config struct {
 	PostgresURL string
 	ApiAddress  string
+	Env         string
+	LogLevel    string
 }
 
 func Load() *Config {
-	if err := godotenv.Load("config.env"); err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	_ = godotenv.Load("config.env")
+
 	var AppConfig Config
 
 	AppConfig = Config{
 		PostgresURL: getEnv("POSTGRES_URL", "postgres://user:password@localhost:5432/projectdb?sslmode=disable"),
 		ApiAddress:  getEnv("API_ADDRESS", ":8080"),
+		Env:         getEnv("ENV", "prod"),
+		LogLevel:    getEnv("LOG_LEVEL", "info"),
 	}
 
 	log.Println("Config loaded")

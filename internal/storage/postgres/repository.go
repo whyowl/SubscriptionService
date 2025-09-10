@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
+	apimw "subservice/internal/api/middleware"
 	"subservice/internal/model"
 	"time"
 
@@ -21,12 +23,13 @@ func NewPgRepository(txManager TransactionManager) *PgRepository {
 }
 
 func (r *PgRepository) InsertSubscription(ctx context.Context, subUnit model.Subscription) error {
-
+	l := apimw.FromContext(ctx)
 	subUnit.StartDate = firstOfMonth(subUnit.StartDate)
 	if subUnit.EndDate != nil {
 		end := firstOfMonth(*subUnit.EndDate)
 		subUnit.EndDate = &end
 	}
+	l.Info("Updated dates for subscription", zap.Time("start_date", subUnit.StartDate), zap.Timep("end_date", subUnit.EndDate))
 
 	tx := r.txManager.GetQueryEngine(ctx)
 
@@ -34,15 +37,21 @@ func (r *PgRepository) InsertSubscription(ctx context.Context, subUnit model.Sub
 
 	_, err := tx.Exec(ctx, query, subUnit.UserId, subUnit.ServiceName, subUnit.Price, subUnit.StartDate, subUnit.EndDate)
 	if err != nil {
+
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
+			l.Warn("Subscription already exists", zap.String("user_id", subUnit.UserId.String()), zap.String("service_name", subUnit.ServiceName))
 			return errors.New("subscription already exists")
 		}
+		l.Error("Failed to insert subscription", zap.Error(err))
 		return err
 	}
+	l.Info("Subscription inserted successfully", zap.String("user_id", subUnit.UserId.String()), zap.String("service_name", subUnit.ServiceName))
 	return nil
 }
 
 func (r *PgRepository) GetSubscription(ctx context.Context, userId uuid.UUID, serviceName string) (*model.Subscription, error) {
+	l := apimw.FromContext(ctx)
+
 	tx := r.txManager.GetQueryEngine(ctx)
 
 	query := `
@@ -63,20 +72,25 @@ func (r *PgRepository) GetSubscription(ctx context.Context, userId uuid.UUID, se
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			l.Warn("Subscription not found", zap.String("user_id", userId.String()), zap.String("service_name", serviceName))
 			return nil, errors.New("subscription not found")
 		}
+		l.Error("Failed to get subscription", zap.Error(err))
 		return nil, err
 	}
-
+	l.Info("Subscription fetched successfully", zap.String("user_id", userId.String()), zap.String("service_name", serviceName))
 	return &sub, nil
 }
 
 func (r *PgRepository) UpdateSubscription(ctx context.Context, subUnit model.Subscription) error {
+	l := apimw.FromContext(ctx)
+
 	subUnit.StartDate = firstOfMonth(subUnit.StartDate)
 	if subUnit.EndDate != nil {
 		end := firstOfMonth(*subUnit.EndDate)
 		subUnit.EndDate = &end
 	}
+	l.Info("Updated dates for subscription", zap.Time("start_date", subUnit.StartDate), zap.Timep("end_date", subUnit.EndDate))
 
 	tx := r.txManager.GetQueryEngine(ctx)
 
@@ -96,34 +110,42 @@ func (r *PgRepository) UpdateSubscription(ctx context.Context, subUnit model.Sub
 		subUnit.ServiceName,
 	)
 	if err != nil {
+		l.Error("Failed to update subscription", zap.Error(err))
 		return err
 	}
 
 	if cmdTag.RowsAffected() == 0 {
+		l.Warn("Subscription not found for update", zap.String("user_id", subUnit.UserId.String()), zap.String("service_name", subUnit.ServiceName))
 		return errors.New("subscription not found")
 	}
-
+	l.Info("Subscription updated successfully", zap.String("user_id", subUnit.UserId.String()), zap.String("service_name", subUnit.ServiceName))
 	return nil
 }
 
 func (r *PgRepository) DeleteSubscription(ctx context.Context, userId uuid.UUID, serviceName string) error {
+	l := apimw.FromContext(ctx)
+
 	tx := r.txManager.GetQueryEngine(ctx)
 
 	query := "DELETE FROM subscriptions WHERE user_id = $1 AND service_name = $2"
 
 	cmdTag, err := tx.Exec(ctx, query, userId, serviceName)
 	if err != nil {
+		l.Error("Failed to delete subscription", zap.Error(err))
 		return err
 	}
 
 	if cmdTag.RowsAffected() == 0 {
+		l.Warn("Subscription not found for deletion", zap.String("user_id", userId.String()), zap.String("service_name", serviceName))
 		return errors.New("subscription not found")
 	}
-
+	l.Info("Subscription deleted successfully", zap.String("user_id", userId.String()), zap.String("service_name", serviceName))
 	return nil
 }
 
 func (r *PgRepository) GetSubscriptionsList(ctx context.Context, userId *uuid.UUID, serviceName *string) (*[]model.Subscription, error) {
+	l := apimw.FromContext(ctx)
+
 	tx := r.txManager.GetQueryEngine(ctx)
 
 	query := `
@@ -136,12 +158,14 @@ func (r *PgRepository) GetSubscriptionsList(ctx context.Context, userId *uuid.UU
 	argIdx := 1
 
 	if userId != nil {
+		l.Info("Filtering subscriptions by user_id", zap.String("user_id", userId.String()))
 		query += fmt.Sprintf(" AND user_id = $%d", argIdx)
 		args = append(args, *userId)
 		argIdx++
 	}
 
 	if serviceName != nil {
+		l.Info("Filtering subscriptions by service_name", zap.String("service_name", *serviceName))
 		query += fmt.Sprintf(" AND service_name = $%d", argIdx)
 		args = append(args, *serviceName)
 		argIdx++
@@ -149,6 +173,7 @@ func (r *PgRepository) GetSubscriptionsList(ctx context.Context, userId *uuid.UU
 
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
+		l.Error("Failed to query subscriptions", zap.Error(err))
 		return nil, err
 	}
 	defer rows.Close()
@@ -163,11 +188,13 @@ func (r *PgRepository) GetSubscriptionsList(ctx context.Context, userId *uuid.UU
 		}
 		subs = append(subs, s)
 	}
-
+	l.Info("Fetched subscriptions successfully", zap.Int("count", len(subs)))
 	return &subs, rows.Err()
 }
 
 func (r *PgRepository) GetSubscriptionsSummary(ctx context.Context, from time.Time, to time.Time, userId *uuid.UUID, serviceName *string) (int, error) {
+	l := apimw.FromContext(ctx)
+
 	tx := r.txManager.GetQueryEngine(ctx)
 
 	query := `
@@ -183,9 +210,10 @@ func (r *PgRepository) GetSubscriptionsSummary(ctx context.Context, from time.Ti
 	var total int
 	err := tx.QueryRow(ctx, query, from, to, userId, serviceName).Scan(&total)
 	if err != nil {
+		l.Error("Failed to get subscriptions summary", zap.Error(err))
 		return 0, err
 	}
-
+	l.Info("Fetched subscriptions summary successfully", zap.Int("total_price", total))
 	return total, nil
 }
 

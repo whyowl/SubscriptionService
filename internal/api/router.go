@@ -4,8 +4,10 @@ import (
 	"context"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 	"net/http"
 	"subservice/internal/api/handler"
+	apimw "subservice/internal/api/middleware"
 	"subservice/internal/service"
 )
 
@@ -14,11 +16,11 @@ type Router struct {
 	s *http.Server
 }
 
-func SetupRouter(s *service.SubscriptionService) *Router {
+func SetupRouter(s *service.SubscriptionService, l *zap.Logger) *Router {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
+	r.Use(apimw.WithLogger(l))
 	r.Use(middleware.Recoverer)
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +51,7 @@ func (router *Router) Run(addr string) error {
 	return router.s.ListenAndServe()
 }
 
-func (router *Router) Stop(ctx context.Context) error { //TODO CHECK
+func (router *Router) Stop(ctx context.Context) error {
 	err := router.s.Shutdown(ctx)
 	if err != nil {
 		return err
